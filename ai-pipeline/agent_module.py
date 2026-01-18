@@ -2,9 +2,8 @@ import json
 import hashlib
 import os
 import pickle
-import re
 from typing import Any, Dict, List, Optional, get_args
-from config import Post, classifier_types, localizer_types
+from config import Post, localizer_types
 from services.openai_api import OpenAIAPI
 
 class AgentModule:
@@ -13,7 +12,6 @@ class AgentModule:
         self.agent_id = None
         self.cache_file = os.path.join(os.path.dirname(__file__), "assistant_cache.pkl")
         self.localizer_values = get_args(localizer_types)
-        self.classifier_values = set(get_args(classifier_types))
         languages_list = ", ".join(self.localizer_values)
         self.agent_prompt = f"""
             Ты агент для обработки обьявлений из Instagram их классификации, нормализации и локализации.
@@ -27,9 +25,7 @@ class AgentModule:
 
             Ответ должен быть объектом без дополнительных полей, где каждый ключ — это локаль из списка [{languages_list}], и значение — пост под эту локаль. Нельзя пропускать локали и нельзя повторять одну локаль под разными ключами.
             В description должно быть короткое описание в несколько предложений.
-            price и square должны быть целыми и > 0. Не придумывай данные — используй только то, что есть в тексте. 
-            Если в посте нет одновременно явных признаков объявления (указана цена с валютой/числами, есть адрес или район, указан тип сделки аренда/продажа, упомянута площадь), верни None.
-            Если пост рекламный, поздравительный, общий информационный или без конкретного объекта, верни None и не выполняй нормализацию и локализацию.
+            Если пост не описывает конкретный объект на аренду или продажу (рекламный, поздравительный, общий информационный), верни None и не выполняй нормализацию и локализацию.
         """
 
     def _build_response_schema(self) -> Dict[str, Any]:
@@ -120,46 +116,19 @@ class AgentModule:
         # OpenAI returns {"value": ...} for JSON schema responses. Normalize
         # the payload and return None when the model explicitly skips a post.
         if isinstance(response, dict) and "value" in response:
-            validated = self._validate_localized_posts(response.get("value"), source_caption)
-            return validated
-        return self._validate_localized_posts(response, source_caption)
+            return self._ensure_prices(response.get("value"))
+        return self._ensure_prices(response)
 
-    def _validate_localized_posts(self, localized_posts: Any, source_caption: str) -> Optional[Dict[str, Any]]:
+    def _ensure_prices(self, localized_posts: Any) -> Optional[Dict[str, Any]]:
         """
-        Post-validation to avoid saving non-listings. Ensures required fields,
-        positive numeric values, correct locales and basic ad signals.
+        Minimal check: drop result if any locale has missing or non-positive price.
         """
-        for locale, post in localized_posts.items():
-            if locale not in self.localizer_values:
-                continue
+        if not isinstance(localized_posts, dict):
+            return None
+        for _, post in localized_posts.items():
             if not isinstance(post, dict):
-                continue
-
-            required_fields = [
-                "id",
-                "post_type",
-                "post_url",
-                "title",
-                "address",
-                "description",
-                "square",
-                "photo_url",
-                "price",
-                "locale",
-            ]
-            if not all(field in post for field in required_fields):
-                continue
-
-            if post.get("post_type") not in self.classifier_values:
-                continue
-
-            def _is_positive_int(value: Any) -> bool:
-                return isinstance(value, int) and value > 0
-
-            if not _is_positive_int(post.get("price")) or not _is_positive_int(post.get("square")):
-                continue
-
-            if not all(isinstance(post.get(field, ""), str) and post.get(field, "").strip() for field in ["title", "address", "description", "photo_url", "post_url"]):
-                continue
-
-        return post
+                return None
+            price = post.get("price")
+            if not isinstance(price, (int, float)) or price <= 0:
+                return None
+        return localized_posts
