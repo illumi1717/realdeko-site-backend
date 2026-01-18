@@ -6,17 +6,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # Install Python dependencies.
-COPY backend/requirements.txt /app/requirements.txt
+COPY realdeko-site-backend/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-# Copy backend sources so both the API and db driver are available.
-COPY backend /app/backend
+# Copy realdeko-site-backend sources so both the API and db driver are available.
+COPY realdeko-site-backend /app/realdeko-site-backend
 
-WORKDIR /app/backend/api
+WORKDIR /app/realdeko-site-backend/api
 
 # Defaults let the container talk to a MongoDB running on the host.
 # Override MONGODB_URI/MONGODB_DB/MONGODB_COLLECTION at runtime as needed.
-ENV PYTHONPATH=/app/backend \
+ENV PYTHONPATH=/app/realdeko-site-backend \
     MONGODB_URI=mongodb://host.docker.internal:27017/ \
     MONGODB_DB=realdeko \
     MONGODB_COLLECTION=posts

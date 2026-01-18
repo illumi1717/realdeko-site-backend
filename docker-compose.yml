@@ -1,0 +1,14 @@
+version: "3.9"
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: realdeko-site-backend/api/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      MONGODB_URI: mongodb://localhost:27017/?directConnection=true&serverSelectionTimeoutMS=2000&authSource=admin&appName=mongosh+2.2.12/
+      MONGODB_DB: realdeko
+      MONGODB_COLLECTION: posts
+    restart: unless-stopped
