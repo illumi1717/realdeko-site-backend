@@ -6,7 +6,7 @@ services:
       context: ..
       dockerfile: realdeko-site-backend/api/Dockerfile
     ports:
-      - "8000:8000"
+      - "80:80"
     environment:
       MONGODB_URI: mongodb://localhost:27017/?directConnection=true&serverSelectionTimeoutMS=2000&authSource=admin&appName=mongosh+2.2.12/
       MONGODB_DB: realdeko
