@@ -1,4 +1,5 @@
 import os
+import json
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
@@ -59,8 +60,19 @@ class OpenAIAPI:
         last_msg = self.client.beta.threads.messages.list(thread_id=thread.id, limit=1).data[0]
         content_item = last_msg.content[0]
         if hasattr(content_item, "text"):
-            return content_item.text.to_dict() 
-        return content_item.to_dict()
+            response_dict = content_item.text.to_dict()
+        else:
+            response_dict = content_item.to_dict()
+
+        # OpenAI text responses wrap the JSON payload as a string under "value".
+        # Parse it so downstream code gets a real JSON object instead of a string.
+        if isinstance(response_dict, dict) and isinstance(response_dict.get("value"), str):
+            try:
+                response_dict["value"] = json.loads(response_dict["value"])
+            except json.JSONDecodeError:
+                pass
+
+        return response_dict
 
     @staticmethod
     def _schema_to_response_format(schema: Optional[Dict[str, Any]]):
