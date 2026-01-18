@@ -42,16 +42,16 @@ class AgentModule:
         }
 
         # OpenAI json_schema response_format requires the top-level schema to be
-        # an object. Wrap the actual payload under the "value" key, while still
-        # allowing the model to return null to explicitly skip a non-listing post.
+        # an object and disallows oneOf/anyOf at some levels. Keep the payload
+        # under the "value" key and allow either the localized object or null.
         wrapped_schema = {
             "type": "object",
             "properties": {
                 "value": {
-                    "oneOf": [
-                        localized_posts_schema,
-                        {"type": "null", "title": "SkipPost"},
-                    ]
+                    "type": ["object", "null"],
+                    "properties": localized_posts_schema["properties"],
+                    "required": localized_posts_schema["required"],
+                    "additionalProperties": False,
                 }
             },
             "required": ["value"],
