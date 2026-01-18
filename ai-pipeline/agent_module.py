@@ -124,44 +124,11 @@ class AgentModule:
             return validated
         return self._validate_localized_posts(response, source_caption)
 
-    def _has_ad_signals(self, caption: str) -> bool:
-        """Heuristic pre-filter to detect price + deal markers in raw caption."""
-        if not caption:
-            return False
-        caption_lower = caption.lower()
-        price_with_currency = re.search(
-            r"(\d[\d\s]{2,})(\s?(usd|eur|₴|грн|₽|rub|czk|kč|\$|€))",
-            caption_lower,
-        )
-        big_number = re.search(r"\b\d{5,}\b", caption_lower)
-        deal_keywords = re.search(
-            r"(rent|sale|продаж|продать|продаю|аренда|аренду|сдам|сдаю|оренда|орендую|najmu|pronaj|prodej|prodeji)",
-            caption_lower,
-        )
-        return bool(deal_keywords and (price_with_currency or big_number))
-
     def _validate_localized_posts(self, localized_posts: Any, source_caption: str) -> Optional[Dict[str, Any]]:
         """
         Post-validation to avoid saving non-listings. Ensures required fields,
         positive numeric values, correct locales and basic ad signals.
         """
-        if not isinstance(localized_posts, dict):
-            return None
-
-        def _locale_matches(expected: str, actual: str) -> bool:
-            actual_l = (actual or "").lower()
-            synonyms = {
-                "cz": {"cz", "cs"},
-                "ua": {"ua", "uk"},
-                "ru": {"ru", "rus", "russian"},
-                "en": {"en", "eng", "english"},
-            }
-            allowed = synonyms.get(expected, {expected})
-            return actual_l in allowed
-
-        valid_locales: Dict[str, Dict[str, Any]] = {}
-
-        # Validate only known locales; ignore unexpected keys instead of failing everything.
         for locale, post in localized_posts.items():
             if locale not in self.localizer_values:
                 continue
@@ -183,9 +150,6 @@ class AgentModule:
             if not all(field in post for field in required_fields):
                 continue
 
-            if not _locale_matches(locale, post.get("locale", "")):
-                continue
-
             if post.get("post_type") not in self.classifier_values:
                 continue
 
@@ -201,14 +165,6 @@ class AgentModule:
             valid_locales[locale] = post
 
         if not valid_locales:
-            return None
-
-        # Require signals of a real listing in caption or model output.
-        descriptions = " ".join(
-            post.get("description", "") for post in valid_locales.values()
-        )
-        combined_text = f"{source_caption} {descriptions}".strip()
-        if not self._has_ad_signals(combined_text):
             return None
 
         return valid_locales
