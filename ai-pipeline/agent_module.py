@@ -40,16 +40,25 @@ class AgentModule:
             "additionalProperties": False,
             "title": "LocalizedPostsPayload",
         }
-        # Allow the assistant to return null (skip) when the post is not about
-        # a specific rent or sale listing.
-        nullable_schema = {
-            "oneOf": [
-                localized_posts_schema,
-                {"type": "null", "title": "SkipPost"},
-            ],
+
+        # OpenAI json_schema response_format requires the top-level schema to be
+        # an object. Wrap the actual payload under the "value" key, while still
+        # allowing the model to return null to explicitly skip a non-listing post.
+        wrapped_schema = {
+            "type": "object",
+            "properties": {
+                "value": {
+                    "oneOf": [
+                        localized_posts_schema,
+                        {"type": "null", "title": "SkipPost"},
+                    ]
+                }
+            },
+            "required": ["value"],
+            "additionalProperties": False,
             "title": "LocalizedPostsResponse",
         }
-        return nullable_schema
+        return wrapped_schema
 
     def _fingerprint(self, response_schema: Dict[str, Any]) -> str:
         schema_str = json.dumps(response_schema, sort_keys=True, ensure_ascii=False)
