@@ -130,6 +130,7 @@ class AgentModule:
             if not isinstance(post, dict):
                 return None
             price = post.get("price")
+            print(price)
             if not isinstance(price, (int, float)) or price <= 0:
                 return None
         return localized_posts
