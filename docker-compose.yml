@@ -12,3 +12,5 @@ services:
       MONGODB_DB: realdeko
       MONGODB_COLLECTION: posts
     restart: unless-stopped
+    network_mode: host
+    
