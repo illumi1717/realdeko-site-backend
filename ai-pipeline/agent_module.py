@@ -13,7 +13,7 @@ class AgentModule:
         self.cache_file = os.path.join(os.path.dirname(__file__), "assistant_cache.pkl")
         self.localizer_values = get_args(localizer_types)
         languages_list = ", ".join(self.localizer_values)
-        self.agent_prompt =f"""
+        self.agent_prompt = f"""
             Ты агент для обработки обьявлений из Instagram их классификации, нормализации и локализации.
             Ты получаешь обьявление из Instagram и ты должен:
 
@@ -25,7 +25,7 @@ class AgentModule:
 
             Ответ должен быть объектом без дополнительных полей, где каждый ключ — это локаль из списка [{languages_list}], и значение — пост под эту локаль. Нельзя пропускать локали и нельзя повторять одну локаль под разными ключами.
             В description должно быть короткое описание в несколько предложений.
-            Не учитывать обьявления, в которых нет адреса обьекта.
+            Если пост не описывает конкретный объект на аренду или продажу (рекламный, поздравительный, общий информационный), верни None и не выполняй нормализацию и локализацию.
         """
 
     def _build_response_schema(self) -> Dict[str, Any]:
@@ -38,9 +38,18 @@ class AgentModule:
             "properties": {locale: post_schema for locale in self.localizer_values},
             "required": list(self.localizer_values),
             "additionalProperties": False,
+            "title": "LocalizedPostsPayload",
+        }
+        # Allow the assistant to return null (skip) when the post is not about
+        # a specific rent or sale listing.
+        nullable_schema = {
+            "oneOf": [
+                localized_posts_schema,
+                {"type": "null", "title": "SkipPost"},
+            ],
             "title": "LocalizedPostsResponse",
         }
-        return localized_posts_schema
+        return nullable_schema
 
     def _fingerprint(self, response_schema: Dict[str, Any]) -> str:
         schema_str = json.dumps(response_schema, sort_keys=True, ensure_ascii=False)
@@ -91,4 +100,8 @@ class AgentModule:
             messages=prepared_messages,
             response_schema=localized_posts_schema,
         )
+        # OpenAI returns {"value": ...} for JSON schema responses. Normalize
+        # the payload and return None when the model explicitly skips a post.
+        if isinstance(response, dict) and "value" in response:
+            return response.get("value")
         return response

@@ -56,6 +56,9 @@ def sync_instagram_posts():
 
     for post in new_posts:
         response = agent.process_data(messages=[{"role": "user", "content": post}])
+        if response is None:
+            print(f"Skipped post {post['id']} — not a rent/sale listing.")
+            continue
         collection.upsert_post(
             instagram_id=post["id"],
             document={
