@@ -162,9 +162,4 @@ class AgentModule:
             if not all(isinstance(post.get(field, ""), str) and post.get(field, "").strip() for field in ["title", "address", "description", "photo_url", "post_url"]):
                 continue
 
-            valid_locales[locale] = post
-
-        if not valid_locales:
-            return None
-
-        return valid_locales
+        return post
