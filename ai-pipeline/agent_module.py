@@ -5,6 +5,7 @@ import pickle
 from typing import Any, Dict, List, Optional, get_args
 from config import Post, localizer_types
 from services.openai_api import OpenAIAPI
+from config import classifier_types, localizer_types, Post
 
 class AgentModule:
     def __init__(self):
