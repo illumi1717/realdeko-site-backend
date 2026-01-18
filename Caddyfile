@@ -1,0 +1,4 @@
+api.realdekogroup.cz {
+    reverse_proxy localhost:8000
+}
+

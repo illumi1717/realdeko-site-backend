@@ -5,12 +5,24 @@ services:
     build:
       context: ..
       dockerfile: realdeko-site-backend/api/Dockerfile
-    ports:
-      - "80:80"
     environment:
-      MONGODB_URI: mongodb://localhost:27017/?directConnection=true&serverSelectionTimeoutMS=2000&authSource=admin&appName=mongosh+2.2.12/
+      MONGODB_URI: mongodb://localhost:27017/?directConnection=true&serverSelectionTimeoutMS=2000&authSource=admin&appName=mongosh+2.2.12
       MONGODB_DB: realdeko
       MONGODB_COLLECTION: posts
     restart: unless-stopped
     network_mode: host
-    
+
+  caddy:
+    image: caddy:2
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+    restart: unless-stopped
+    network_mode: host
+
+volumes:
+  caddy_data:
+  caddy_config:
