@@ -14,6 +14,9 @@ class PostCollection:
         self.db = DbaseDriver()
         self.collection = self.db.get_collection(collection_name or os.getenv("MONGODB_COLLECTION", "posts"))
 
+    def get_all_posts(self) -> List[dict]:
+        return list(self.collection.find({}))
+
     def upsert_post(self, instagram_id: str, document: dict):
         document["_id"] = instagram_id
         return self.collection.update_one({"_id": instagram_id}, {"$set": document}, upsert=True)
