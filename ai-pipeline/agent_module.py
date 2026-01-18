@@ -148,11 +148,25 @@ class AgentModule:
         if not isinstance(localized_posts, dict):
             return None
 
-        # Require all locales and valid structure.
-        for locale in self.localizer_values:
-            post = localized_posts.get(locale)
+        def _locale_matches(expected: str, actual: str) -> bool:
+            actual_l = (actual or "").lower()
+            synonyms = {
+                "cz": {"cz", "cs"},
+                "ua": {"ua", "uk"},
+                "ru": {"ru", "rus", "russian"},
+                "en": {"en", "eng", "english"},
+            }
+            allowed = synonyms.get(expected, {expected})
+            return actual_l in allowed
+
+        valid_locales: Dict[str, Dict[str, Any]] = {}
+
+        # Validate only known locales; ignore unexpected keys instead of failing everything.
+        for locale, post in localized_posts.items():
+            if locale not in self.localizer_values:
+                continue
             if not isinstance(post, dict):
-                return None
+                continue
 
             required_fields = [
                 "id",
@@ -167,29 +181,34 @@ class AgentModule:
                 "locale",
             ]
             if not all(field in post for field in required_fields):
-                return None
+                continue
 
-            if post.get("locale") != locale:
-                return None
+            if not _locale_matches(locale, post.get("locale", "")):
+                continue
 
             if post.get("post_type") not in self.classifier_values:
-                return None
+                continue
 
             def _is_positive_int(value: Any) -> bool:
                 return isinstance(value, int) and value > 0
 
             if not _is_positive_int(post.get("price")) or not _is_positive_int(post.get("square")):
-                return None
+                continue
 
             if not all(isinstance(post.get(field, ""), str) and post.get(field, "").strip() for field in ["title", "address", "description", "photo_url", "post_url"]):
-                return None
+                continue
+
+            valid_locales[locale] = post
+
+        if not valid_locales:
+            return None
 
         # Require signals of a real listing in caption or model output.
         descriptions = " ".join(
-            post.get("description", "") for post in localized_posts.values() if isinstance(post, dict)
+            post.get("description", "") for post in valid_locales.values()
         )
         combined_text = f"{source_caption} {descriptions}".strip()
         if not self._has_ad_signals(combined_text):
             return None
 
-        return localized_posts
+        return valid_locales
