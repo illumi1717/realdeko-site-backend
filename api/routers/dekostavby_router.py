@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 
 dekostavby_router = APIRouter()
 
-@dekostavby_router.get("/application")
+@dekostavby_router.post("/create_application")
 def create_application(application: ApplicationSchema):
     if send_email(application.name, application.phone, application.service, application.message):
         return JSONResponse(status_code=200, content={"message": "Application created successfully"})
