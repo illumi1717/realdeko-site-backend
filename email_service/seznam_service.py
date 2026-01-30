@@ -24,6 +24,7 @@ HTML_TEMPLATE = """\
     <p>Заявка з сайту DekoStavby<br>
        Ім'я: [Ім'я]<br>
        Телефон: [Телефон]<br>
+       Email: [Email]<br>
        Послуга: [Послуга]<br>
        Повідомлення: [Повідомлення]<br>
     </p>
@@ -32,11 +33,12 @@ HTML_TEMPLATE = """\
 """
 
 
-def send_email(name: str, phone: str, service: str, user_message: str):
+def send_email(name: str, phone: str, email: str, service: str, user_message: str):
     """Send application email via Seznam SMTP with simple HTML body."""
     html_body = (
         HTML_TEMPLATE.replace("[Ім'я]", name)
         .replace("[Телефон]", phone)
+        .replace("[Email]", email)
         .replace("[Послуга]", service)
         .replace("[Повідомлення]", user_message)
     )
@@ -55,6 +57,3 @@ def send_email(name: str, phone: str, service: str, user_message: str):
     except Exception as e:
         return False
 
-
-if __name__ == "__main__":
-    send_email("John Doe", "+420 777 000 000", "Consultation", "I want to consult you about the project")
