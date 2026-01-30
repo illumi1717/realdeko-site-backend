@@ -14,6 +14,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(router)
-app.include_router(application_router)
-app.include_router(dekostavby_router)
+app.include_router(router, prefix="/posts")
+app.include_router(application_router, prefix="/application")
+app.include_router(dekostavby_router, prefix="/dekostavby")
