@@ -1,6 +1,7 @@
 import os
 import uuid
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, File, UploadFile, HTTPException, status
 from fastapi.responses import JSONResponse
@@ -32,8 +33,10 @@ async def upload_media(file: UploadFile = File(...)):
 
 
 def _resolve_path_from_url(url: str) -> Path:
-    # Accept both absolute (/media/xxx) and relative (xxx) inputs.
-    cleaned = url.replace("/media/", "").replace("\\", "/").strip("/")
+    # Accept both absolute (with domain) and relative (/media/xxx) inputs.
+    parsed = urlparse(url)
+    path = parsed.path or url
+    cleaned = path.replace("/media/", "").replace("\\", "/").strip("/")
     target_path = MEDIA_ROOT / cleaned
     # Prevent escaping the media directory.
     if not target_path.resolve().is_relative_to(MEDIA_ROOT.resolve()):
