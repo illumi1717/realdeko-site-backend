@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Literal, Optional, Union
+from typing import Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -54,6 +54,19 @@ class StatsBlock(BaseModel):
 
 ArticleBlock = Union[HeadingBlock, TextBlock, GalleryBlock, VideoBlock, QuoteBlock, StatsBlock]
 
+LanguageCode = Literal["cs", "en", "uk", "ru"]
+
+
+class ArticleTranslation(BaseModel):
+    title: Optional[str] = None
+    subtitle: Optional[str] = None
+    location: Optional[str] = None
+    body: Optional[str] = None
+    tags: Optional[List[str]] = None
+    key_metrics: Optional[List[KeyMetric]] = None
+    gallery: Optional[List[GalleryImage]] = None
+    blocks: Optional[List[ArticleBlock]] = None
+
 
 class ArticleBase(BaseModel):
     slug: str = Field(..., description="Slug used as a unique identifier and URL segment")
@@ -72,6 +85,7 @@ class ArticleBase(BaseModel):
     key_metrics: List[KeyMetric] = []
     gallery: List[GalleryImage] = []
     blocks: List[ArticleBlock] = []
+    translations: Dict[LanguageCode, ArticleTranslation] = Field(default_factory=dict)
 
 
 class ArticleCreate(ArticleBase):
@@ -94,6 +108,7 @@ class ArticleUpdate(BaseModel):
     key_metrics: Optional[List[KeyMetric]] = None
     gallery: Optional[List[GalleryImage]] = None
     blocks: Optional[List[ArticleBlock]] = None
+    translations: Optional[Dict[LanguageCode, ArticleTranslation]] = None
 
 
 class ArticleResponse(ArticleBase):
