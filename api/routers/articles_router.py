@@ -1,9 +1,15 @@
 import json
 import os
+from pathlib import Path
 from typing import List, Optional
 
+from dotenv import load_dotenv
 from fastapi import APIRouter, HTTPException, Query, status
 from openai import OpenAI
+
+# Load .env from the ai-pipeline directory where OPENAI_API_KEY is stored
+_env_path = Path(__file__).resolve().parents[2] / "ai-pipeline" / ".env"
+load_dotenv(_env_path)
 
 from api.schemas.ArticleSchema import (
     ArticleCreate,
