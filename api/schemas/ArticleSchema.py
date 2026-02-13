@@ -63,6 +63,8 @@ class ArticleBase(BaseModel):
     cover_url: Optional[str] = None
     video_url: Optional[str] = None
     body: Optional[str] = None
+    price: Optional[str] = Field(default=None, description="Displayed price label")
+    price_on_request: bool = Field(default=False, description="True if price should be hidden and shown as on-request")
     highlight: bool = False
     status: Literal["draft", "published"] = "draft"
     post_type: Literal["sale", "rent"] = "sale"
@@ -83,6 +85,8 @@ class ArticleUpdate(BaseModel):
     cover_url: Optional[str] = None
     video_url: Optional[str] = None
     body: Optional[str] = None
+    price: Optional[str] = None
+    price_on_request: Optional[bool] = None
     highlight: Optional[bool] = None
     status: Optional[Literal["draft", "published"]] = None
     post_type: Optional[Literal["sale", "rent"]] = None
