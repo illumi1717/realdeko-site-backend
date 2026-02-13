@@ -116,3 +116,24 @@ class ArticleResponse(ArticleBase):
     created_at: datetime
     updated_at: datetime
 
+
+class LocalizeRequest(BaseModel):
+    """Payload sent to the AI-localization endpoint."""
+    source_lang: LanguageCode = Field(default="uk", description="Language code of the source (base) content")
+    target_langs: List[LanguageCode] = Field(
+        default_factory=lambda: ["cs", "en", "ru"],
+        description="Language codes to translate into",
+    )
+
+
+class LocalizedTranslation(BaseModel):
+    title: Optional[str] = None
+    subtitle: Optional[str] = None
+    location: Optional[str] = None
+    body: Optional[str] = None
+    key_metrics: Optional[List[KeyMetric]] = None
+
+
+class LocalizeResponse(BaseModel):
+    translations: Dict[LanguageCode, LocalizedTranslation]
+
