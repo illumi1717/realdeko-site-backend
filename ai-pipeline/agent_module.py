@@ -167,7 +167,20 @@ class AgentModule:
             response_schema=response_schema,
         )
 
-        # OpenAI returns {"value": ...} — extract the inner value
-        if isinstance(response, dict) and "value" in response:
-            return response.get("value")
-        return response
+        # send_messages returns Text.to_dict():
+        #   {"value": <parsed JSON>, "annotations": [...]}
+        # where <parsed JSON> is our schema wrapper:
+        #   {"value": <article_data | null>}
+        #
+        # We need to unwrap BOTH levels to get the actual article data.
+
+        # 1st unwrap: OpenAI Text wrapper → our schema response
+        result = response
+        if isinstance(result, dict) and "value" in result:
+            result = result.get("value")
+
+        # 2nd unwrap: our JSON schema nullable wrapper → actual data or None
+        if isinstance(result, dict) and "value" in result:
+            result = result.get("value")
+
+        return result if isinstance(result, dict) else None
