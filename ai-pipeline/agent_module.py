@@ -2,62 +2,118 @@ import json
 import hashlib
 import os
 import pickle
-from typing import Any, Dict, List, Optional, get_args
-from config import Post, localizer_types
+from typing import Any, Dict, List, Optional
+from config import target_langs
 from services.openai_api import OpenAIAPI
-from config import classifier_types, localizer_types, Post
+
 
 class AgentModule:
     def __init__(self):
         self.openai_api = OpenAIAPI()
         self.agent_id = None
         self.cache_file = os.path.join(os.path.dirname(__file__), "assistant_cache.pkl")
-        self.localizer_values = get_args(localizer_types)
-        languages_list = ", ".join(self.localizer_values)
+
+        langs_list = ", ".join(target_langs)
+
         self.agent_prompt = f"""
-            Ты агент для обработки обьявлений из Instagram их классификации, нормализации и локализации.
-            Ты получаешь обьявление из Instagram и ты должен:
+            Ты агент для обработки постов из Instagram агентства недвижимости.
+            Ты получаешь пост из Instagram (caption и ссылку на изображение) и должен:
 
-            - Классифицировать обьявление как одно из значений: {classifier_types}, если обьявление не соответствует классификации, то не должен его учитывать в ответе
-            
-            - Нормализовать обьявление, под моделью Post: {Post.model_json_schema()}
+            1. Определить, является ли пост объявлением о сдаче/продаже недвижимости.
+               Если пост НЕ является объявлением (рекламный, поздравительный, общий информационный), верни null.
 
-            - Локализовать обьявление, под языки: {languages_list}
+            2. Классифицировать объявление как "rent" (аренда) или "sale" (продажа).
 
-            Ответ должен быть объектом без дополнительных полей, где каждый ключ — это локаль из списка [{languages_list}], и значение — пост под эту локаль. Нельзя пропускать локали и нельзя повторять одну локаль под разными ключами.
-            В description должно быть короткое описание в несколько предложений.
-            Если пост не описывает конкретный объект на аренду или продажу (рекламный, поздравительный, общий информационный), верни None и не выполняй нормализацию и локализацию.
+            3. Сгенерировать контент статьи на украинском языке (uk):
+               - slug: URL-friendly идентификатор (латинские символы, нижний регистр, дефисы вместо пробелов, без спецсимволов)
+               - title: короткий привлекательный заголовок
+               - subtitle: краткое описание в одну строку
+               - location: адрес или район
+               - body: подробное описание (несколько абзацев, описывающих объект)
+               - price: строка с ценой и валютой (например "25 000 CZK/měsíc"), пустая строка если цена неизвестна
+               - price_on_request: true если цена не указана и должна быть "по запросу"
+               - tags: релевантные теги (например ["квартира", "центр", "2+kk"])
+               - key_metrics: ключевые характеристики объекта (площадь, количество комнат, этаж и т.д.)
+                 Каждая метрика имеет: label (название), value (значение), helper (пояснение, пустая строка если не нужно)
+
+            4. Перевести title, subtitle, location, body, tags и key_metrics на языки: {langs_list}
+
+            Ответ должен быть JSON-объектом с полями базовой статьи и полем translations с переводами на каждый язык.
+            Если пост не является объявлением — верни null.
         """
 
     def _build_response_schema(self) -> Dict[str, Any]:
-        post_schema = Post.model_json_schema()
-        if post_schema.get("type") == "object":
-            post_schema.setdefault("additionalProperties", False)
+        """Build JSON schema compatible with OpenAI strict mode for article drafts."""
 
-        localized_posts_schema = {
+        key_metric_schema = {
             "type": "object",
-            "properties": {locale: post_schema for locale in self.localizer_values},
-            "required": list(self.localizer_values),
+            "properties": {
+                "label": {"type": "string"},
+                "value": {"type": "string"},
+                "helper": {"type": "string"},
+            },
+            "required": ["label", "value", "helper"],
             "additionalProperties": False,
-            "title": "LocalizedPostsPayload",
         }
 
-        # OpenAI json_schema response_format requires the top-level schema to be
-        # an object and disallows oneOf/anyOf at some levels. Keep the payload
-        # under the "value" key and allow either the localized object or null.
+        translation_schema = {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "subtitle": {"type": "string"},
+                "location": {"type": "string"},
+                "body": {"type": "string"},
+                "tags": {"type": "array", "items": {"type": "string"}},
+                "key_metrics": {"type": "array", "items": key_metric_schema},
+            },
+            "required": ["title", "subtitle", "location", "body", "tags", "key_metrics"],
+            "additionalProperties": False,
+        }
+
+        draft_schema = {
+            "type": "object",
+            "properties": {
+                "post_type": {"type": "string", "enum": ["rent", "sale"]},
+                "slug": {"type": "string"},
+                "title": {"type": "string"},
+                "subtitle": {"type": "string"},
+                "location": {"type": "string"},
+                "body": {"type": "string"},
+                "price": {"type": "string"},
+                "price_on_request": {"type": "boolean"},
+                "tags": {"type": "array", "items": {"type": "string"}},
+                "key_metrics": {"type": "array", "items": key_metric_schema},
+                "translations": {
+                    "type": "object",
+                    "properties": {
+                        lang: translation_schema for lang in target_langs
+                    },
+                    "required": list(target_langs),
+                    "additionalProperties": False,
+                },
+            },
+            "required": [
+                "post_type", "slug", "title", "subtitle", "location",
+                "body", "price", "price_on_request", "tags", "key_metrics",
+                "translations",
+            ],
+            "additionalProperties": False,
+        }
+
+        # Wrap with nullable support (null = post is not a listing)
         wrapped_schema = {
             "type": "object",
             "properties": {
                 "value": {
                     "type": ["object", "null"],
-                    "properties": localized_posts_schema["properties"],
-                    "required": localized_posts_schema["required"],
+                    "properties": draft_schema["properties"],
+                    "required": draft_schema["required"],
                     "additionalProperties": False,
                 }
             },
             "required": ["value"],
             "additionalProperties": False,
-            "title": "LocalizedPostsResponse",
+            "title": "ArticleDraftResponse",
         }
         return wrapped_schema
 
@@ -96,42 +152,22 @@ class AgentModule:
         self._persist_cache(self.agent_id)
         print(f"Agent created with id: {self.agent_id}")
 
-    def process_data(self, messages: List[Dict[str, Any]]):
-        prepared_messages: List[Dict[str, str]] = []
-        source_caption = ""
-        for msg in messages:
-            content = msg.get("content", "")
-            if not source_caption and msg.get("role") == "user":
-                if isinstance(content, dict):
-                    source_caption = content.get("caption", "") or ""
-            if not isinstance(content, str):
-                content = json.dumps(content, ensure_ascii=False)
-            prepared_messages.append({**msg, "content": content})
+    def process_post(self, post: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Process a single Instagram post and return article draft data,
+        or None if the post is not a listing.
+        """
+        content = json.dumps(post, ensure_ascii=False)
+        messages = [{"role": "user", "content": content}]
 
-        localized_posts_schema = self._build_response_schema()
+        response_schema = self._build_response_schema()
         response = self.openai_api.send_messages(
             assistant_id=self.agent_id,
-            messages=prepared_messages,
-            response_schema=localized_posts_schema,
+            messages=messages,
+            response_schema=response_schema,
         )
-        # OpenAI returns {"value": ...} for JSON schema responses. Normalize
-        # the payload and return None when the model explicitly skips a post.
-        if isinstance(response, dict) and "value" in response:
-            return self._ensure_prices(response.get("value"))
-        return self._ensure_prices(response)
 
-    def _ensure_prices(self, localized_posts: Any) -> Optional[Dict[str, Any]]:
-        """
-        Minimal check: drop result if any locale has missing or non-positive price.
-        """
-        if not isinstance(localized_posts, dict):
-            return None
-        for _, post in localized_posts.items():
-            if not isinstance(post, dict):
-                return None
-            price = post['ua']['price']
-            print(post)
-            print(price)
-            if not isinstance(price, (int, float)) or price <= 0:
-                return None
-        return localized_posts
+        # OpenAI returns {"value": ...} — extract the inner value
+        if isinstance(response, dict) and "value" in response:
+            return response.get("value")
+        return response

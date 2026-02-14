@@ -76,3 +76,18 @@ class ArticleCollection:
         result = self.collection.delete_one({"_id": slug})
         return result.deleted_count == 1
 
+    # --- Instagram source helpers ---
+
+    def get_source_instagram_ids(self) -> List[str]:
+        """Return all source_instagram_id values stored in articles."""
+        docs = self.collection.find(
+            {"source_instagram_id": {"$exists": True, "$ne": None}},
+            {"source_instagram_id": 1},
+        )
+        return [doc["source_instagram_id"] for doc in docs]
+
+    def get_by_instagram_id(self, instagram_id: str) -> Optional[dict]:
+        """Find an article imported from a specific Instagram post."""
+        document = self.collection.find_one({"source_instagram_id": instagram_id})
+        return self._serialize(document)
+

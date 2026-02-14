@@ -1,76 +1,188 @@
+import re
+import unicodedata
+
 from agent_module import AgentModule
 from services.instagram_api import InstagramAPI
-from dbase.collections.PostCollection import PostCollection
+from dbase.collections.ArticleCollection import ArticleCollection
 
 
 USERNAME = "realdeko_group_official"
 
 
 def normalize_posts(raw_posts):
+    """Extract relevant fields from raw Instagram API response."""
     edges = raw_posts.get("result", {}).get("edges", [])
-    normalized_posts = []
+    normalized = []
 
     for post in edges:
         try:
             node = post["node"]
-            normalized_posts.append(
+            code = node["code"]
+            normalized.append(
                 {
-                    "id": node["id"],
+                    "instagram_id": node["id"],
+                    "code": code,
                     "caption": node.get("caption", {}).get("text", ""),
                     "image_url": node["image_versions2"]["candidates"][0]["url"],
-                    "post_url": "https://www.instagram.com/p/" + node["code"],
+                    "post_url": f"https://www.instagram.com/p/{code}",
                 }
             )
         except Exception as e:
             print(f"Error processing post {post.get('node', {}).get('id', '<unknown>')}: {e}")
-    return normalized_posts
+
+    return normalized
+
+
+def slugify(text: str, max_length: int = 60) -> str:
+    """Simple slugify: transliterate, lowercase, replace non-alnum with hyphens."""
+    # Basic Cyrillic → Latin transliteration map
+    translit_map = {
+        'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo',
+        'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm',
+        'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
+        'ф': 'f', 'х': 'kh', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'shch',
+        'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
+        'і': 'i', 'ї': 'yi', 'є': 'ye', 'ґ': 'g',
+        'ě': 'e', 'š': 's', 'č': 'c', 'ř': 'r', 'ž': 'z', 'ý': 'y',
+        'á': 'a', 'í': 'i', 'é': 'e', 'ú': 'u', 'ů': 'u', 'ň': 'n',
+        'ť': 't', 'ď': 'd', 'ö': 'o', 'ü': 'u', 'ä': 'a',
+    }
+    text = text.lower()
+    result = []
+    for ch in text:
+        if ch in translit_map:
+            result.append(translit_map[ch])
+        else:
+            result.append(ch)
+    text = "".join(result)
+
+    # Normalize unicode and keep only ASCII alnum + hyphens
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    text = re.sub(r"[^a-z0-9]+", "-", text).strip("-")
+    text = re.sub(r"-{2,}", "-", text)
+
+    if len(text) > max_length:
+        text = text[:max_length].rstrip("-")
+
+    return text
+
+
+def build_article_document(ai_result: dict, instagram_post: dict) -> dict:
+    """
+    Convert AI agent output + Instagram post data into a document
+    ready for ArticleCollection.create().
+    """
+    # Ensure slug is unique by appending Instagram code
+    base_slug = ai_result.get("slug", "")
+    if not base_slug:
+        base_slug = slugify(ai_result.get("title", "post"))
+    instagram_code = instagram_post.get("code", "")
+    slug = f"{base_slug}-{instagram_code}" if instagram_code else base_slug
+
+    # Build translations dict matching ArticleSchema format
+    translations = {}
+    ai_translations = ai_result.get("translations", {})
+    for lang_code, t in ai_translations.items():
+        translations[lang_code] = {
+            "title": t.get("title"),
+            "subtitle": t.get("subtitle"),
+            "location": t.get("location"),
+            "body": t.get("body"),
+            "tags": t.get("tags"),
+            "key_metrics": t.get("key_metrics"),
+        }
+
+    # Determine price fields
+    price = ai_result.get("price", "")
+    price_on_request = ai_result.get("price_on_request", False)
+    if not price:
+        price_on_request = True
+
+    return {
+        "slug": slug,
+        "title": ai_result.get("title", ""),
+        "subtitle": ai_result.get("subtitle", ""),
+        "location": ai_result.get("location", ""),
+        "cover_url": instagram_post.get("image_url", ""),
+        "body": ai_result.get("body", ""),
+        "price": price if price else None,
+        "price_on_request": price_on_request,
+        "highlight": False,
+        "status": "draft",
+        "post_type": ai_result.get("post_type", "sale"),
+        "tags": ai_result.get("tags", []),
+        "key_metrics": ai_result.get("key_metrics", []),
+        "gallery": [],
+        "blocks": [],
+        "translations": translations,
+        # Track source for deduplication
+        "source": "instagram",
+        "source_instagram_id": instagram_post.get("instagram_id"),
+        "source_post_url": instagram_post.get("post_url", ""),
+    }
 
 
 def sync_instagram_posts():
+    """
+    Main pipeline: fetch Instagram posts, process with AI,
+    and save new ones as draft articles.
+    """
+    # 1. Fetch posts from Instagram
     instagram_api = InstagramAPI()
-    posts = instagram_api.get_posts(USERNAME)
+    raw_posts = instagram_api.get_posts(USERNAME)
+    normalized_posts = normalize_posts(raw_posts)
 
-    normalized_posts = normalize_posts(posts)
     if not normalized_posts:
         print("No posts received from Instagram.")
         return
 
-    collection = PostCollection()
-    existing_ids = set(collection.get_instagram_ids())
-    current_ids = {post["id"] for post in normalized_posts}
+    print(f"Fetched {len(normalized_posts)} posts from Instagram.")
 
-    # Remove posts that disappeared from Instagram.
-    removed_ids = list(existing_ids - current_ids)
-    if removed_ids:
-        collection.delete_by_ids(removed_ids)
-        print(f"Removed {len(removed_ids)} posts that no longer exist on Instagram.")
+    # 2. Check which posts are already imported
+    collection = ArticleCollection()
+    existing_instagram_ids = set(collection.get_source_instagram_ids())
 
-    # Process only new posts.
-    new_posts = [post for post in normalized_posts if post["id"] not in existing_ids]
+    new_posts = [p for p in normalized_posts if p["instagram_id"] not in existing_instagram_ids]
     if not new_posts:
-        print("No new posts to process.")
+        print("No new posts to process. All posts already imported.")
         return
 
+    print(f"Found {len(new_posts)} new posts to process.")
+
+    # 3. Create AI agent
     agent = AgentModule()
     agent.create_agent()
 
+    # 4. Process each new post
+    imported = 0
+    skipped = 0
+
     for post in new_posts:
-        response = agent.process_data(messages=[{"role": "user", "content": post}])
-        if response is None:
-            print(f"Skipped post {post['id']} — not a rent/sale listing.")
+        print(f"\nProcessing Instagram post {post['instagram_id']} ({post['post_url']})...")
+
+        ai_result = agent.process_post(post)
+
+        if ai_result is None:
+            print(f"  → Skipped (not a listing).")
+            skipped += 1
             continue
-        collection.upsert_post(
-            instagram_id=post["id"],
-            document={
-                "instagram_id": post["id"],
-                "post_url": post["post_url"],
-                "photo_url": post["image_url"],
-                "caption": post["caption"],
-                "localized_posts": response,
-                "source": "instagram",
-            },
-        )
-        print(f"Processed and saved post {post['id']}")
+
+        # Build article document and save as draft
+        article_doc = build_article_document(ai_result, post)
+
+        try:
+            created = collection.create(article_doc)
+            print(f"  → Created draft article: {created['slug']}")
+            imported += 1
+        except ValueError as e:
+            # Slug already exists — skip
+            print(f"  → Skipped (slug conflict): {e}")
+            skipped += 1
+        except Exception as e:
+            print(f"  → Error saving article: {e}")
+            skipped += 1
+
+    print(f"\nDone! Imported: {imported}, Skipped: {skipped}")
 
 
 if __name__ == "__main__":
