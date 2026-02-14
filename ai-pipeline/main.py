@@ -1,5 +1,10 @@
+import os
 import re
+import uuid
 import unicodedata
+from pathlib import Path
+
+import requests
 
 from agent_module import AgentModule
 from services.instagram_api import InstagramAPI
@@ -7,6 +12,11 @@ from dbase.collections.ArticleCollection import ArticleCollection
 
 
 USERNAME = "realdeko_group_official"
+
+# Use the same MEDIA_ROOT as the API server.
+# Default: ../media relative to ai-pipeline/ → backend/media/
+MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", os.path.join(os.path.dirname(__file__), "..", "media")))
+MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
 
 
 def normalize_posts(raw_posts):
@@ -67,6 +77,40 @@ def slugify(text: str, max_length: int = 60) -> str:
     return text
 
 
+def download_image(url: str) -> str:
+    """
+    Download an image from a URL and save it locally to MEDIA_ROOT.
+    Returns the relative media path (e.g. /media/<filename>.jpg).
+    """
+    try:
+        resp = requests.get(url, timeout=30, stream=True)
+        resp.raise_for_status()
+
+        # Determine file extension from Content-Type header
+        content_type = resp.headers.get("Content-Type", "")
+        ext_map = {
+            "image/jpeg": ".jpg",
+            "image/png": ".png",
+            "image/webp": ".webp",
+            "image/gif": ".gif",
+        }
+        ext = ext_map.get(content_type.split(";")[0].strip(), ".jpg")
+
+        filename = f"{uuid.uuid4().hex}{ext}"
+        target_path = MEDIA_ROOT / filename
+
+        with open(target_path, "wb") as f:
+            for chunk in resp.iter_content(chunk_size=8192):
+                f.write(chunk)
+
+        print(f"  → Downloaded image: {filename} ({target_path.stat().st_size // 1024} KB)")
+        return f"/media/{filename}"
+
+    except Exception as e:
+        print(f"  → Failed to download image: {e}")
+        return ""
+
+
 def build_article_document(ai_result: dict, instagram_post: dict) -> dict:
     """
     Convert AI agent output + Instagram post data into a document
@@ -103,7 +147,7 @@ def build_article_document(ai_result: dict, instagram_post: dict) -> dict:
         "title": ai_result.get("title", ""),
         "subtitle": ai_result.get("subtitle", ""),
         "location": ai_result.get("location", ""),
-        "cover_url": instagram_post.get("image_url", ""),
+        "cover_url": instagram_post.get("local_image_url") or instagram_post.get("image_url", ""),
         "body": ai_result.get("body", ""),
         "price": price if price else None,
         "price_on_request": price_on_request,
@@ -166,6 +210,13 @@ def sync_instagram_posts():
             print(f"  → Skipped (not a listing).")
             skipped += 1
             continue
+
+        # Download cover image locally before saving the article
+        image_url = post.get("image_url", "")
+        if image_url:
+            local_path = download_image(image_url)
+            if local_path:
+                post["local_image_url"] = local_path
 
         # Build article document and save as draft
         article_doc = build_article_document(ai_result, post)
