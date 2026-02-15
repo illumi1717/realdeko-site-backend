@@ -1,8 +1,14 @@
 from pydantic import BaseModel
+from typing import Optional
+
 
 class ApplicationSchema(BaseModel):
     name: str
     phone: str
-    email: str | None = None
+    email: Optional[str] = None
     message: str
-    service: str | None = None
+    service: Optional[str] = None
+
+
+class ApplicationStatusUpdate(BaseModel):
+    status: str  # "new", "processed"
