@@ -83,7 +83,7 @@ def send_realdekogroup_email(name: str, phone: str, message: str):
     email_message = MIMEMultipart("alternative")
     email_message["Subject"] = "Нова заявка з сайту RealDekoGroup"
     email_message["From"] = sender_email
-    email_message["To"] = receiver_email
+    email_message["To"] = 'mykhailo.kohutka@seznam.cz'
     email_message.attach(MIMEText(html_body, "html"))
 
     try:
