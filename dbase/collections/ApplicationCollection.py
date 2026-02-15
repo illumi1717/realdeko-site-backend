@@ -43,6 +43,7 @@ class ApplicationCollection:
         document = {
             **data,
             "status": "new",
+            "notes": "",
             "created_at": now,
             "updated_at": now,
         }
@@ -54,6 +55,14 @@ class ApplicationCollection:
         document = self.collection.find_one_and_update(
             {"_id": ObjectId(application_id)},
             {"$set": {"status": status, "updated_at": datetime.utcnow()}},
+            return_document=ReturnDocument.AFTER,
+        )
+        return self._serialize(document)
+
+    def update_notes(self, application_id: str, notes: str) -> Optional[dict]:
+        document = self.collection.find_one_and_update(
+            {"_id": ObjectId(application_id)},
+            {"$set": {"notes": notes, "updated_at": datetime.utcnow()}},
             return_document=ReturnDocument.AFTER,
         )
         return self._serialize(document)

@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 
-from api.schemas.ApplicationSchema import ApplicationSchema, ApplicationStatusUpdate
+from api.schemas.ApplicationSchema import ApplicationSchema, ApplicationStatusUpdate, ApplicationNotesUpdate
 from dbase.collections.ApplicationCollection import ApplicationCollection
 from email_service.seznam_service import send_realdekogroup_email
 
@@ -54,6 +54,15 @@ def update_application_status(application_id: str, body: ApplicationStatusUpdate
         raise HTTPException(status_code=400, detail="Status must be 'new' or 'processed'")
 
     updated = applications_db.update_status(application_id, body.status)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Application not found")
+    return updated
+
+
+@router.patch("/applications/{application_id}/notes")
+def update_application_notes(application_id: str, body: ApplicationNotesUpdate):
+    """Update admin notes for an application."""
+    updated = applications_db.update_notes(application_id, body.notes)
     if not updated:
         raise HTTPException(status_code=404, detail="Application not found")
     return updated

@@ -12,3 +12,7 @@ class ApplicationSchema(BaseModel):
 
 class ApplicationStatusUpdate(BaseModel):
     status: str  # "new", "processed"
+
+
+class ApplicationNotesUpdate(BaseModel):
+    notes: str
