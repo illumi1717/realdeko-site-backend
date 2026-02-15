@@ -89,7 +89,7 @@ def send_realdekogroup_email(name: str, phone: str, message: str):
     try:
         with smtplib.SMTP_SSL(smtp_server, smtp_port, context=context) as server:
             server.login(sender_email, password)
-            server.sendmail(sender_email, receiver_email, email_message.as_string())
+            server.sendmail(sender_email, 'mykhailo.kohutka@seznam.cz', email_message.as_string())
             return True
     except Exception as e:
         print(f"RealDekoGroup email send error: {e}")
