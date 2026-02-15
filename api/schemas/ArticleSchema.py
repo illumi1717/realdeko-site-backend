@@ -118,11 +118,18 @@ class ArticleResponse(ArticleBase):
 
 
 class LocalizeRequest(BaseModel):
-    """Payload sent to the AI-localization endpoint."""
-    source_lang: LanguageCode = Field(default="uk", description="Language code of the source (base) content")
+    """Payload sent to the AI-localization endpoint.
+
+    Base article content is always in Ukrainian (uk).
+    Localizations are always built for: English (en), Czech (cs), Russian (ru).
+    """
+    source_lang: Literal["uk"] = Field(
+        default="uk",
+        description="Source language is always Ukrainian (uk)",
+    )
     target_langs: List[LanguageCode] = Field(
-        default_factory=lambda: ["cs", "en", "ru"],
-        description="Language codes to translate into",
+        default_factory=lambda: ["en", "cs", "ru"],
+        description="Target languages: English, Czech, Russian",
     )
 
 

@@ -95,7 +95,7 @@ def delete_article(slug: str):
 
 @articles_router.post("/{slug}/localize", response_model=LocalizeResponse)
 def localize_article(slug: str, payload: LocalizeRequest):
-    """Use OpenAI to translate the base article content into target languages."""
+    """Translate base Ukrainian article content into English, Czech, and Russian."""
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise HTTPException(
@@ -103,12 +103,16 @@ def localize_article(slug: str, payload: LocalizeRequest):
             detail="OPENAI_API_KEY is not configured on the server.",
         )
 
+    # Base content is always Ukrainian; targets are always en, cs, ru
+    source_lang = "uk"
+    target_langs = ["en", "cs", "ru"]
+
     collection = ArticleCollection()
     article = collection.get(slug)
     if not article:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
 
-    # Build the source content dict to send to the model
+    # Build the source content dict (Ukrainian base) to send to the model
     source_content = {
         "title": article.get("title", ""),
         "subtitle": article.get("subtitle", ""),
@@ -123,8 +127,7 @@ def localize_article(slug: str, payload: LocalizeRequest):
             for m in key_metrics
         ]
 
-    source_lang_name = LANGUAGE_NAMES.get(payload.source_lang, payload.source_lang)
-    target_lang_names = {code: LANGUAGE_NAMES.get(code, code) for code in payload.target_langs}
+    target_lang_names = {code: LANGUAGE_NAMES[code] for code in target_langs}
 
     target_langs_description = ", ".join(
         f'"{code}" ({name})' for code, name in target_lang_names.items()
@@ -132,16 +135,16 @@ def localize_article(slug: str, payload: LocalizeRequest):
 
     system_prompt = (
         "You are a professional real-estate copywriter and translator. "
-        "You receive a property listing in one language and translate it into the requested target languages. "
+        "You receive a property listing in Ukrainian and translate it into the requested target languages. "
         "Preserve the tone, marketing appeal, and all factual details (numbers, addresses, proper nouns). "
         "Location names that are proper nouns (street names, city districts) should stay in their original form. "
         "Return ONLY valid JSON — no markdown fences, no commentary."
     )
 
     user_prompt = (
-        f"Source language: {source_lang_name} ({payload.source_lang}).\n"
+        f"Source language: Ukrainian (uk).\n"
         f"Target languages: {target_langs_description}.\n\n"
-        f"Source content:\n{json.dumps(source_content, ensure_ascii=False, indent=2)}\n\n"
+        f"Source content (Ukrainian):\n{json.dumps(source_content, ensure_ascii=False, indent=2)}\n\n"
         "Translate all text fields into each target language. "
         "Return a JSON object with this exact structure:\n"
         "{\n"
@@ -155,7 +158,7 @@ def localize_article(slug: str, payload: LocalizeRequest):
         "    }\n"
         "  }\n"
         "}\n"
-        "Include a key for every target language code. "
+        "Include a key for every target language code (en, cs, ru). "
         "If there are no key_metrics in the source, omit the key_metrics field."
     )
 
