@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from openai import OpenAI
 
 # Load .env from the ai-pipeline directory where OPENAI_API_KEY is stored
@@ -19,6 +19,7 @@ from api.schemas.ArticleSchema import (
     LocalizeRequest,
     LocalizeResponse,
 )
+from api.dependencies.auth import require_admin
 from dbase.collections.ArticleCollection import ArticleCollection
 
 articles_router = APIRouter(prefix="/articles", tags=["articles"])
@@ -66,7 +67,7 @@ def get_article(
 
 
 @articles_router.post("", response_model=ArticleResponse, status_code=status.HTTP_201_CREATED)
-def create_article(payload: ArticleCreate):
+def create_article(payload: ArticleCreate, _admin: dict = Depends(require_admin)):
     collection = ArticleCollection()
     try:
         return collection.create(payload.dict())
@@ -75,7 +76,7 @@ def create_article(payload: ArticleCreate):
 
 
 @articles_router.put("/{slug}", response_model=ArticleResponse)
-def update_article(slug: str, payload: ArticleUpdate):
+def update_article(slug: str, payload: ArticleUpdate, _admin: dict = Depends(require_admin)):
     collection = ArticleCollection()
     updates = payload.dict(exclude_unset=True)
     article = collection.update(slug, updates)
@@ -85,7 +86,7 @@ def update_article(slug: str, payload: ArticleUpdate):
 
 
 @articles_router.delete("/{slug}")
-def delete_article(slug: str):
+def delete_article(slug: str, _admin: dict = Depends(require_admin)):
     collection = ArticleCollection()
     deleted = collection.delete(slug)
     if not deleted:
@@ -94,7 +95,7 @@ def delete_article(slug: str):
 
 
 @articles_router.post("/{slug}/localize", response_model=LocalizeResponse)
-def localize_article(slug: str, payload: LocalizeRequest):
+def localize_article(slug: str, payload: LocalizeRequest, _admin: dict = Depends(require_admin)):
     """Translate base Ukrainian article content into English, Czech, and Russian."""
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:

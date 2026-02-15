@@ -10,7 +10,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
+
+from api.dependencies.auth import require_admin
 
 pipeline_router = APIRouter(prefix="/pipeline", tags=["pipeline"])
 
@@ -81,7 +83,7 @@ def _run_pipeline():
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
 @pipeline_router.post("/run")
-def run_pipeline():
+def run_pipeline(_admin: dict = Depends(require_admin)):
     """
     Trigger the AI pipeline (Instagram sync → AI draft creation).
     Returns immediately; the pipeline runs in the background.
@@ -102,7 +104,7 @@ def run_pipeline():
 
 
 @pipeline_router.get("/status")
-def pipeline_status():
+def pipeline_status(_admin: dict = Depends(require_admin)):
     """Return the current state of the pipeline."""
     return _get_state()
 

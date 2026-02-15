@@ -1,8 +1,9 @@
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
+from api.dependencies.auth import require_admin
 from api.schemas.ApplicationSchema import ApplicationSchema, ApplicationStatusUpdate, ApplicationNotesUpdate
 from dbase.collections.ApplicationCollection import ApplicationCollection
 from email_service.seznam_service import send_realdekogroup_email
@@ -32,14 +33,14 @@ def create_application(application: ApplicationSchema):
 
 
 @router.get("/applications")
-def list_applications(status: Optional[str] = None):
+def list_applications(status: Optional[str] = None, _admin: dict = Depends(require_admin)):
     """List all applications, optionally filtered by status."""
     items = applications_db.list(status=status)
     return items
 
 
 @router.get("/applications/{application_id}")
-def get_application(application_id: str):
+def get_application(application_id: str, _admin: dict = Depends(require_admin)):
     """Get a single application by ID."""
     item = applications_db.get(application_id)
     if not item:
@@ -48,7 +49,7 @@ def get_application(application_id: str):
 
 
 @router.patch("/applications/{application_id}/status")
-def update_application_status(application_id: str, body: ApplicationStatusUpdate):
+def update_application_status(application_id: str, body: ApplicationStatusUpdate, _admin: dict = Depends(require_admin)):
     """Update the status of an application (new -> processed, etc.)."""
     if body.status not in ("new", "processed"):
         raise HTTPException(status_code=400, detail="Status must be 'new' or 'processed'")
@@ -60,7 +61,7 @@ def update_application_status(application_id: str, body: ApplicationStatusUpdate
 
 
 @router.patch("/applications/{application_id}/notes")
-def update_application_notes(application_id: str, body: ApplicationNotesUpdate):
+def update_application_notes(application_id: str, body: ApplicationNotesUpdate, _admin: dict = Depends(require_admin)):
     """Update admin notes for an application."""
     updated = applications_db.update_notes(application_id, body.notes)
     if not updated:
@@ -69,7 +70,7 @@ def update_application_notes(application_id: str, body: ApplicationNotesUpdate):
 
 
 @router.delete("/applications/{application_id}")
-def delete_application(application_id: str):
+def delete_application(application_id: str, _admin: dict = Depends(require_admin)):
     """Delete an application."""
     deleted = applications_db.delete(application_id)
     if not deleted:

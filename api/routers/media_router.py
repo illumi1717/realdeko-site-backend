@@ -3,8 +3,10 @@ import uuid
 from pathlib import Path
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, File, UploadFile, HTTPException, status
+from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, status
 from fastapi.responses import JSONResponse
+
+from api.dependencies.auth import require_admin
 
 MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", "media"))
 MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
@@ -13,7 +15,7 @@ media_router = APIRouter(prefix="/media", tags=["media"])
 
 
 @media_router.post("/upload")
-async def upload_media(file: UploadFile = File(...)):
+async def upload_media(file: UploadFile = File(...), _admin: dict = Depends(require_admin)):
     if not file.filename:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Filename is required")
 
@@ -45,7 +47,7 @@ def _resolve_path_from_url(url: str) -> Path:
 
 
 @media_router.delete("")
-async def delete_media(url: str):
+async def delete_media(url: str, _admin: dict = Depends(require_admin)):
     if not url:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="url is required")
     target_path = _resolve_path_from_url(url)
