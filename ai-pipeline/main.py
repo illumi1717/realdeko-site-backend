@@ -189,8 +189,20 @@ def build_article_document(ai_result: dict, instagram_post: dict) -> dict:
             "key_metrics": t.get("key_metrics"),
         }
 
-    # Determine price fields
+    # Determine price fields — guard against AI putting non-monetary text into price
     price = ai_result.get("price", "")
+    INVALID_PRICES = {
+        # deal types
+        "rent", "sale", "аренда", "продажа", "оренда", "продаж",
+        # property types (uk/ru/cs/en)
+        "квартира", "будинок", "дом", "кімната", "комната", "студія", "студия",
+        "byt", "dům", "apartmán", "pokoj",
+        "apartment", "house", "flat", "studio", "room",
+    }
+    price_lower = price.strip().lower()
+    if price_lower in INVALID_PRICES or (price_lower and not any(ch.isdigit() for ch in price_lower)):
+        print(f"  ⚠ AI put '{price}' into price field instead of a monetary value — resetting to empty.")
+        price = ""
     price_on_request = ai_result.get("price_on_request", False)
     if not price:
         price_on_request = True
