@@ -20,7 +20,13 @@ MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
 
 
 def normalize_posts(raw_posts):
-    """Extract relevant fields from raw Instagram API response."""
+    """Extract relevant fields from raw Instagram API response.
+
+    Handles three Instagram media types:
+      media_type 1 → photo
+      media_type 2 → video / reel
+      media_type 8 → carousel (album of photos / videos)
+    """
     edges = raw_posts.get("result", {}).get("edges", [])
     normalized = []
 
@@ -28,12 +34,46 @@ def normalize_posts(raw_posts):
         try:
             node = post["node"]
             code = node["code"]
+            media_type = node.get("media_type", 1)  # 1=photo, 2=video, 8=carousel
+
+            # --- cover image (always present as a thumbnail) ---
+            image_url = ""
+            image_versions = node.get("image_versions2", {}).get("candidates", [])
+            if image_versions:
+                image_url = image_versions[0]["url"]
+
+            # --- video URL (only for video posts, media_type 2) ---
+            video_url = ""
+            video_versions = node.get("video_versions", [])
+            if video_versions:
+                video_url = video_versions[0]["url"]
+
+            # --- carousel media (media_type 8) ---
+            carousel_items = []
+            if media_type == 8:
+                for item in node.get("carousel_media", []):
+                    item_type = item.get("media_type", 1)
+                    item_data = {"media_type": item_type}
+
+                    item_images = item.get("image_versions2", {}).get("candidates", [])
+                    if item_images:
+                        item_data["image_url"] = item_images[0]["url"]
+
+                    item_videos = item.get("video_versions", [])
+                    if item_videos:
+                        item_data["video_url"] = item_videos[0]["url"]
+
+                    carousel_items.append(item_data)
+
             normalized.append(
                 {
                     "instagram_id": node["id"],
                     "code": code,
+                    "media_type": media_type,
                     "caption": node.get("caption", {}).get("text", ""),
-                    "image_url": node["image_versions2"]["candidates"][0]["url"],
+                    "image_url": image_url,
+                    "video_url": video_url,
+                    "carousel_media": carousel_items,
                     "post_url": f"https://www.instagram.com/p/{code}",
                 }
             )
@@ -77,13 +117,13 @@ def slugify(text: str, max_length: int = 60) -> str:
     return text
 
 
-def download_image(url: str) -> str:
+def download_media(url: str) -> str:
     """
-    Download an image from a URL and save it locally to MEDIA_ROOT.
-    Returns the relative media path (e.g. /media/<filename>.jpg).
+    Download media (image or video) from a URL and save it locally to MEDIA_ROOT.
+    Returns the relative media path (e.g. /media/<filename>.jpg or /media/<filename>.mp4).
     """
     try:
-        resp = requests.get(url, timeout=30, stream=True)
+        resp = requests.get(url, timeout=60, stream=True)
         resp.raise_for_status()
 
         # Determine file extension from Content-Type header
@@ -93,8 +133,15 @@ def download_image(url: str) -> str:
             "image/png": ".png",
             "image/webp": ".webp",
             "image/gif": ".gif",
+            "video/mp4": ".mp4",
+            "video/quicktime": ".mov",
+            "video/webm": ".webm",
         }
-        ext = ext_map.get(content_type.split(";")[0].strip(), ".jpg")
+        ct_clean = content_type.split(";")[0].strip()
+        ext = ext_map.get(ct_clean, "")
+        if not ext:
+            # Fallback: guess from content-type family
+            ext = ".mp4" if ct_clean.startswith("video/") else ".jpg"
 
         filename = f"{uuid.uuid4().hex}{ext}"
         target_path = MEDIA_ROOT / filename
@@ -103,11 +150,13 @@ def download_image(url: str) -> str:
             for chunk in resp.iter_content(chunk_size=8192):
                 f.write(chunk)
 
-        print(f"  → Downloaded image: {filename} ({target_path.stat().st_size // 1024} KB)")
+        kind = "video" if ext in (".mp4", ".mov", ".webm") else "image"
+        size_kb = target_path.stat().st_size // 1024
+        print(f"  → Downloaded {kind}: {filename} ({size_kb} KB)")
         return f"/media/{filename}"
 
     except Exception as e:
-        print(f"  → Failed to download image: {e}")
+        print(f"  → Failed to download media: {e}")
         return ""
 
 
@@ -115,6 +164,10 @@ def build_article_document(ai_result: dict, instagram_post: dict) -> dict:
     """
     Convert AI agent output + Instagram post data into a document
     ready for ArticleCollection.create().
+
+    Supports photo, video and carousel Instagram posts:
+    - Video posts populate cover_url (thumbnail) and video_url.
+    - Carousel posts populate gallery with all downloaded media items.
     """
     # Ensure slug is unique by appending Instagram code
     base_slug = ai_result.get("slug", "")
@@ -142,12 +195,24 @@ def build_article_document(ai_result: dict, instagram_post: dict) -> dict:
     if not price:
         price_on_request = True
 
+    # --- Cover image / video ---
+    cover_url = instagram_post.get("local_image_url") or instagram_post.get("image_url", "")
+    video_url = instagram_post.get("local_video_url") or instagram_post.get("video_url", "") or None
+
+    # --- Gallery from carousel items ---
+    gallery = []
+    for item in instagram_post.get("local_carousel_media", []):
+        src = item.get("local_image_url") or item.get("image_url", "")
+        if src:
+            gallery.append({"src": src})
+
     return {
         "slug": slug,
         "title": ai_result.get("title", ""),
         "subtitle": ai_result.get("subtitle", ""),
         "location": ai_result.get("location", ""),
-        "cover_url": instagram_post.get("local_image_url") or instagram_post.get("image_url", ""),
+        "cover_url": cover_url,
+        "video_url": video_url,
         "body": ai_result.get("body", ""),
         "price": price if price else None,
         "price_on_request": price_on_request,
@@ -156,7 +221,7 @@ def build_article_document(ai_result: dict, instagram_post: dict) -> dict:
         "post_type": ai_result.get("post_type", "sale"),
         "tags": ai_result.get("tags", []),
         "key_metrics": ai_result.get("key_metrics", []),
-        "gallery": [],
+        "gallery": gallery,
         "blocks": [],
         "translations": translations,
         # Track source for deduplication
@@ -202,7 +267,9 @@ def sync_instagram_posts():
     skipped = 0
 
     for post in new_posts:
-        print(f"\nProcessing Instagram post {post['instagram_id']} ({post['post_url']})...")
+        media_type = post.get("media_type", 1)
+        media_label = {1: "photo", 2: "video", 8: "carousel"}.get(media_type, "unknown")
+        print(f"\nProcessing Instagram {media_label} post {post['instagram_id']} ({post['post_url']})...")
 
         ai_result = agent.process_post(post)
 
@@ -211,12 +278,45 @@ def sync_instagram_posts():
             skipped += 1
             continue
 
-        # Download cover image locally before saving the article
+        # --- Download cover image ---
         image_url = post.get("image_url", "")
         if image_url:
-            local_path = download_image(image_url)
+            local_path = download_media(image_url)
             if local_path:
                 post["local_image_url"] = local_path
+
+        # --- Download video (for video posts, media_type 2) ---
+        video_url = post.get("video_url", "")
+        if video_url:
+            local_video = download_media(video_url)
+            if local_video:
+                post["local_video_url"] = local_video
+
+        # --- Download carousel items (for carousel posts, media_type 8) ---
+        if media_type == 8 and post.get("carousel_media"):
+            local_carousel = []
+            for idx, item in enumerate(post["carousel_media"]):
+                print(f"  → Downloading carousel item {idx + 1}/{len(post['carousel_media'])}...")
+                local_item = {}
+
+                # Download image (thumbnail for videos, full image for photos)
+                item_image = item.get("image_url", "")
+                if item_image:
+                    local_img = download_media(item_image)
+                    if local_img:
+                        local_item["local_image_url"] = local_img
+
+                # Download video if carousel item is a video
+                item_video = item.get("video_url", "")
+                if item_video:
+                    local_vid = download_media(item_video)
+                    if local_vid:
+                        local_item["local_video_url"] = local_vid
+
+                local_item["media_type"] = item.get("media_type", 1)
+                local_carousel.append(local_item)
+
+            post["local_carousel_media"] = local_carousel
 
         # Build article document and save as draft
         article_doc = build_article_document(ai_result, post)

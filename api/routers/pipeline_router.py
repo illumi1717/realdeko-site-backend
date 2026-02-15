@@ -106,3 +106,4 @@ def pipeline_status():
     """Return the current state of the pipeline."""
     return _get_state()
 
+
