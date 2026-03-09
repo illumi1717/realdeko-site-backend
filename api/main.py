@@ -6,6 +6,7 @@ from api.routers.dekostavby_router import dekostavby_router
 from api.routers.articles_router import articles_router
 from api.routers.media_router import media_router
 from api.routers.pipeline_router import pipeline_router
+from api.routers.team_router import router as team_router
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -25,6 +26,7 @@ app.include_router(dekostavby_router, prefix="/dekostavby")
 app.include_router(articles_router)
 app.include_router(media_router)
 app.include_router(pipeline_router)
+app.include_router(team_router)
 
 # Default matches the ai-pipeline default: backend/media/ (one level above api/)
 _default_media = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "media")
